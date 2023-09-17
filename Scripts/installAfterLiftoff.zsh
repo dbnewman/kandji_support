@@ -11,14 +11,14 @@
 # Tested macOS Versions
 ################################################################################################
 #
-#   13.1
-#   12.6.1
+#   13.5
+#   12.6.9
 #
 ################################################################################################
 # Software Information
 ################################################################################################
 #
-# This script creates a launchdaemon that will trigger the execution of a library item
+# This script creates a launchdaemon that will trigger the execution of library item(s)
 # as soon as Liftoff is closed.  This can be useful for some security platforms that
 # aggresively disrupt the network connectivity during install or require user
 # interaction to complete.
@@ -63,7 +63,7 @@
 #
 ################################################################################################
 # Script version
-VERSION="1.0.1"
+VERSION="1.0.2"
 
 ################################################################################################
 ########################################## VARIABLES ###########################################
@@ -71,7 +71,10 @@ VERSION="1.0.1"
 # Adjust this to match the Library Item name in the Kandji Web App. ie "Zscaler
 # Connector"
 
-LIBRARY_ITEM="Zscaler Connector"
+LIBRARY_ITEM_LIST=(
+    "Clean My Dock"
+    "Set Finder Preferences"
+)
 
 ################################################################################################
 ################################ MAIN LOGIC - DO NOT MODIFY BELOW ##############################
@@ -81,20 +84,36 @@ LIBRARY_ITEM="Zscaler Connector"
 daemonName="io.kandji.installAfterLiftoff"
 scriptPath="/tmp/installAfterLiftoff.sh"
 
+# Converts the array into a pipe seperated string
+LIBRARY_ITEM_LIST_STRING=$(IFS=\|; echo "$LIBRARY_ITEM_LIST")
+
 # Content for Script
 script=$(
          /bin/cat <<EOF
-#!/bin/bash
+#!/bin/zsh
+
+echo "\$(date) Starting Liftoff post-execute script" > /tmp/installAfterLiftoff.log
 
 # Wait for Liftoff to close
 until ! pgrep "Liftoff" >/dev/null
 	do
 	sleep 1
 	/bin/echo "Liftoff is running..."
+    echo "\$(date) Liftoff is running..." >> /tmp/installAfterLiftoff.log
 	done
 
+IFS='\\|' read -r -A LIBRARY_ITEM_LIST <<< "$LIBRARY_ITEM_LIST_STRING"
+IFS=' '
+
+echo "\$(date) Library item list is: \$LIBRARY_ITEM_LIST" >> /tmp/installAfterLiftoff.log
+
 # Execute Library Item
-/usr/local/bin/kandji library --item "$LIBRARY_ITEM" -F
+for item in \${LIBRARY_ITEM_LIST[@]}; do
+    echo "\$(date) Executing library item \$item..." >> /tmp/installAfterLiftoff.log
+    /usr/local/bin/kandji library --item "\$item" -F
+done
+
+echo "\$(date) Cleaning up launch daemon..." >> /tmp/installAfterLiftoff.log
 
 # Clean Up After Yourself
 rm "/tmp/$daemonName.plist"
@@ -102,6 +121,9 @@ rm "$scriptPath"
 
 # Unload LaunchDaemon
 /bin/launchctl unload "/tmp/$daemonName.plist"
+
+echo "\$(date) Complete!" >> /tmp/installAfterLiftoff.log
+rm /tmp/installAfterLiftoff.log
 EOF
 )
 
@@ -116,7 +138,7 @@ launchDaemon=$(
     <string>$daemonName</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
+        <string>/bin/zsh</string>
         <string>$scriptPath</string>
     </array>
     <key>RunAtLoad</key>
